@@ -59,8 +59,7 @@ Response:
 ```
 
 ## Hive Plugin Routing Semantics
-
-`HiveGovernanceAuthorizer` behavior:
+`PhasedRangerAuthorizer` behavior:
 
 1. call governance platform (`GovernanceClient.decide`)
 2. if exception / non-200 response: fail-open (`BYPASS`)
@@ -77,3 +76,21 @@ Response:
 ```bash
 mvn test
 ```
+
+## Ranger Inheritance Integration (Hive / Spark / Doris)
+
+To preserve native Ranger capabilities, Hive plugin now provides:
+
+- `PhasedRangerAuthorizer extends RangerHiveAuthorizer`
+- `PhasedRangerAuthorizerFactory extends RangerHiveAuthorizerFactory`
+
+Routing behavior:
+
+- `BLOCK`: throw `HiveAccessControlException`
+- `BYPASS/WARN`: return directly
+- `CHECK`: call `super.checkPrivileges(...)` to reuse Ranger native policy
+
+Factory returns phased authorizer instead of native factory output, so governance routing is inserted before Ranger check while keeping Ranger compatibility.
+
+
+Spark and Doris follow the same phased routing contract via `PhasedSparkAuthorizer` and `PhasedDorisAuthorizer` plus their factory classes.
