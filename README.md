@@ -59,7 +59,6 @@ Response:
 ```
 
 ## Hive Plugin Routing Semantics
-
 `PhasedRangerAuthorizer` behavior:
 
 1. call governance platform (`GovernanceClient.decide`)
