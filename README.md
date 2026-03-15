@@ -9,7 +9,7 @@
 ## Core Principles
 - Centralized decision making
 - Dumb plugin routing (engine-side lightweight)
-- FeiYou closed-loop notification
+- Msg closed-loop notification
 - Fail-open for business continuity
 
 ## Modules (Maven Multi-Module)
@@ -24,7 +24,7 @@
 
 - `BLOCK`: throw exception and stop SQL execution
 - `BYPASS`: allow directly, skip Ranger
-- `WARN`: allow with warning (platform sends FeiYou)
+- `WARN`: allow with warning (platform sends msg)
 - `CHECK`: invoke Ranger authorization
 
 ## Request/Response Contract

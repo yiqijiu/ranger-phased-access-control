@@ -6,7 +6,7 @@ import com.ranger.governance.common.model.DecisionResponse;
 import com.ranger.governance.common.model.EngineType;
 import com.ranger.governance.server.cache.GovernancePolicyCache;
 import com.ranger.governance.server.service.GovernanceDecisionService;
-import com.ranger.governance.server.service.NoopFeiYouNotifier;
+import com.ranger.governance.server.service.NoopMsgNotifier;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +26,7 @@ class GovernanceDecisionServiceTest {
                 new HashSet<String>(Arrays.asList("", "anonymous")),
                 new HashSet<String>(Arrays.asList("etl_warn_job"))
         );
-        service = new GovernanceDecisionService(cache, new NoopFeiYouNotifier());
+        service = new GovernanceDecisionService(cache, new NoopMsgNotifier());
     }
 
     @Test

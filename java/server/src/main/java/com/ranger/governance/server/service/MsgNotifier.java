@@ -1,5 +1,5 @@
 package com.ranger.governance.server.service;
 
-public interface FeiYouNotifier {
+public interface MsgNotifier {
     void send(String receiver, String title, String content);
 }

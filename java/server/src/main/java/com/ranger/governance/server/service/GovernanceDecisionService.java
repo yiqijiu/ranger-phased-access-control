@@ -10,9 +10,9 @@ import java.util.UUID;
 
 public class GovernanceDecisionService {
     private final GovernancePolicyCache cache;
-    private final FeiYouNotifier notifier;
+    private final MsgNotifier notifier;
 
-    public GovernanceDecisionService(GovernancePolicyCache cache, FeiYouNotifier notifier) {
+    public GovernanceDecisionService(GovernancePolicyCache cache, MsgNotifier notifier) {
         this.cache = cache;
         this.notifier = notifier;
     }
