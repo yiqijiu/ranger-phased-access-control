@@ -6,9 +6,6 @@ import com.ranger.governance.common.model.DecisionRequest;
 import com.ranger.governance.common.model.DecisionResponse;
 import com.ranger.governance.common.protocol.GovernanceClient;
 
-/**
- * Doris plugin router using unified governance semantics.
- */
 public class PhasedDorisAuthorizer {
     private final GovernanceClient governanceClient;
     private final DorisRangerChecker rangerChecker;
@@ -29,34 +26,33 @@ public class PhasedDorisAuthorizer {
         try {
             response = governanceClient.decide(request);
         } catch (Exception ex) {
-            return; // fail-open
-        }
-
-        if (response == null || !response.success() || response.data() == null || response.data().actionType() == null) {
             return;
         }
 
-        DecisionData data = response.data();
-        switch (data.actionType()) {
-            case BLOCK -> throw new RuntimeException(data.msg());
-            case BYPASS, WARN -> {
-                return;
-            }
-            case CHECK -> {
+        if (response == null || !response.success() || response.getData() == null || response.getData().getActionType() == null) {
+            return;
+        }
+
+        DecisionData data = response.getData();
+        ActionType action = data.getActionType();
+        if (action == ActionType.BLOCK) {
+            throw new RuntimeException(data.getMsg());
+        }
+        if (action == ActionType.BYPASS || action == ActionType.WARN) {
+            return;
+        }
+        if (action == ActionType.CHECK) {
+            try {
+                rangerChecker.check(request);
+            } catch (RuntimeException rangerEx) {
                 try {
-                    rangerChecker.check(request);
-                } catch (RuntimeException rangerEx) {
-                    try {
-                        governanceClient.msgFail(request, rangerEx.getMessage());
-                    } catch (Exception ignored) {
-                    }
-                    if (strictCheckFailure) {
-                        throw rangerEx;
-                    }
+                    governanceClient.msgFail(request, rangerEx.getMessage());
+                } catch (Exception ignored) {
+                    // ignore callback error
                 }
-            }
-            default -> {
-                return;
+                if (strictCheckFailure) {
+                    throw rangerEx;
+                }
             }
         }
     }

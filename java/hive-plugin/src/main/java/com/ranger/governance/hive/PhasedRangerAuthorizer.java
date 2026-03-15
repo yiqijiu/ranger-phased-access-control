@@ -23,12 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
-/**
- * Ranger proxy authorizer for phased governance rollout.
- *
- * <p>Key point: this class extends {@link RangerHiveAuthorizer} so CHECK can inherit
- * native Ranger behavior via super.checkPrivileges(...).</p>
- */
+
 public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
     private static final Logger LOG = LoggerFactory.getLogger(PhasedRangerAuthorizer.class);
 
@@ -64,39 +59,37 @@ public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
             LOG.error("Governance platform error, fail-open BYPASS", ex);
             return;
         }
-
-        if (response == null || !response.success() || response.data() == null || response.data().actionType() == null) {
+        if (response == null || !response.success() || response.getData() == null || response.getData().getActionType() == null) {
             LOG.warn("Governance response invalid/non-200, fail-open BYPASS. response={}", response);
             return;
         }
 
-        DecisionData data = response.data();
-        switch (data.actionType()) {
-            case BLOCK -> throw new HiveAccessControlException(nonEmpty(data.msg(), "任务被拦截：请补充 JobName 或按规范整改。"));
-            case BYPASS -> {
-                return;
-            }
-            case WARN -> {
-                LOG.warn("WARN action for queryId={}, msg={}", request.queryId(), data.msg());
-                return;
-            }
-            case CHECK -> {
+        DecisionData data = response.getData();
+        ActionType actionType = data.getActionType();
+        if (actionType == ActionType.BLOCK) {
+            throw new HiveAccessControlException(nonEmpty(data.getMsg(), "任务被拦截：请补充 JobName 或按规范整改。"));
+        }
+        if (actionType == ActionType.BYPASS) {
+            return;
+        }
+        if (actionType == ActionType.WARN) {
+            LOG.warn("WARN action for queryId={}, msg={}", request.getQueryId(), data.getMsg());
+            return;
+        }
+        if (actionType == ActionType.CHECK) {
+            try {
+                super.checkPrivileges(hiveOpType, inputHObjs, outputHObjs, context);
+            } catch (HiveAccessControlException rangerEx) {
                 try {
-                    super.checkPrivileges(hiveOpType, inputHObjs, outputHObjs, context);
-                } catch (HiveAccessControlException rangerEx) {
-                    try {
-                        governanceClient.msgFail(request, rangerEx.getMessage());
-                    } catch (Exception callbackEx) {
-                        LOG.error("msgFail callback failed", callbackEx);
-                    }
-                    if (strictCheckFailure) {
-                        throw rangerEx;
-                    }
-                    LOG.warn("Observe mode enabled, swallow Ranger denial. queryId={}, err={}", request.queryId(), rangerEx.getMessage());
+                    governanceClient.msgFail(request, rangerEx.getMessage());
+                } catch (Exception callbackEx) {
+                    LOG.error("msgFail callback failed", callbackEx);
                 }
-            }
-            default -> {
-                return;
+                if (strictCheckFailure) {
+                    throw rangerEx;
+                }
+                LOG.warn("Observe mode enabled, swallow Ranger denial. queryId={}, err={}", request.getQueryId(), rangerEx.getMessage());
+
             }
         }
     }
@@ -117,7 +110,8 @@ public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
     }
 
     private String nonEmpty(String message, String fallback) {
-        if (message == null || message.isBlank()) {
+        if (message == null || message.trim().isEmpty()) {
+
             return fallback;
         }
         return message;

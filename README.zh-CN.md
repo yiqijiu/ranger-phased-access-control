@@ -3,17 +3,9 @@
 # Ranger Phased Access Control
 
 ### Hive / Spark / Doris 统一安全治理（Java 实现）
-
-
-- 中心化决策
-- 插件哑终端化
-- 飞邮闭环触达
-- 熔断放行
-
 ## Maven 模块规划
 
 ## 核心理念
-
 - 中心化决策
 - 插件哑终端化
 - 飞邮闭环触达
@@ -28,7 +20,6 @@
 - `java/doris-plugin`：Doris 插件占位模块（Java）
 
 ## 标准动作（ActionType）
-
 - `BLOCK`：抛异常拦截 SQL
 - `BYPASS`：直接放行，跳过 Ranger
 - `WARN`：提醒放行（平台异步飞邮）

@@ -6,9 +6,6 @@ import com.ranger.governance.common.model.DecisionRequest;
 import com.ranger.governance.common.model.DecisionResponse;
 import com.ranger.governance.common.protocol.GovernanceClient;
 
-/**
- * Spark plugin router following the same phased-routing semantics as Hive plugin.
- */
 public class PhasedSparkAuthorizer {
     private final GovernanceClient governanceClient;
     private final SparkRangerChecker rangerChecker;
@@ -29,35 +26,33 @@ public class PhasedSparkAuthorizer {
         try {
             response = governanceClient.decide(request);
         } catch (Exception ex) {
-            return; // fail-open
+            return;
         }
 
-        if (response == null || !response.success() || response.data() == null || response.data().actionType() == null) {
-            return; // fail-open
+        if (response == null || !response.success() || response.getData() == null || response.getData().getActionType() == null) {
+            return;
         }
 
-        DecisionData data = response.data();
-        ActionType action = data.actionType();
-        switch (action) {
-            case BLOCK -> throw new RuntimeException(data.msg());
-            case BYPASS, WARN -> {
-                return;
-            }
-            case CHECK -> {
+        DecisionData data = response.getData();
+        ActionType action = data.getActionType();
+        if (action == ActionType.BLOCK) {
+            throw new RuntimeException(data.getMsg());
+        }
+        if (action == ActionType.BYPASS || action == ActionType.WARN) {
+            return;
+        }
+        if (action == ActionType.CHECK) {
+            try {
+                rangerChecker.check(request);
+            } catch (RuntimeException rangerEx) {
                 try {
-                    rangerChecker.check(request);
-                } catch (RuntimeException rangerEx) {
-                    try {
-                        governanceClient.msgFail(request, rangerEx.getMessage());
-                    } catch (Exception ignored) {
-                    }
-                    if (strictCheckFailure) {
-                        throw rangerEx;
-                    }
+                    governanceClient.msgFail(request, rangerEx.getMessage());
+                } catch (Exception ignored) {
+                    // ignore callback error
                 }
-            }
-            default -> {
-                return;
+                if (strictCheckFailure) {
+                    throw rangerEx;
+                }
             }
         }
     }

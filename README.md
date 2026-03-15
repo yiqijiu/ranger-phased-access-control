@@ -7,8 +7,6 @@
 </div>
 
 ## Core Principles
-
-
 - Centralized decision making
 - Dumb plugin routing (engine-side lightweight)
 - FeiYou closed-loop notification
