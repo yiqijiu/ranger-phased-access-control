@@ -40,4 +40,5 @@ public class DecisionRequest {
     public String getQueryId() {
         return queryId;
     }
+
 }

@@ -23,6 +23,7 @@ public class DecisionResponse {
         return data;
     }
 
+
     public boolean success() {
         return code == 200;
     }
