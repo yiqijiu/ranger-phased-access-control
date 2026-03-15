@@ -2,95 +2,96 @@
 
 # Ranger Phased Access Control
 
-### Unified Security Governance for Hive / Spark / Doris
-
-<p align="center">
-  <img src="https://img.shields.io/badge/architecture-centralized-blue" />
-  <img src="https://img.shields.io/badge/engines-Hive%20%7C%20Spark%20%7C%20Doris-success" />
-  <img src="https://img.shields.io/badge/policy-BLOCK%20%7C%20BYPASS%20%7C%20WARN%20%7C%20CHECK-orange" />
-  <img src="https://img.shields.io/badge/availability-fail--open-critical" />
-  <img src="https://img.shields.io/badge/status-initial%20design-lightgrey" />
-  <img src="https://img.shields.io/badge/license-MIT-black" />
-</p>
-
-<p align="center">
-  Phased Adoption · Centralized Decision-Making · Dumb Plugins · IM Notification · Fail-Open Protection
-</p>
+### Unified Security Governance for Hive / Spark / Doris (Java-first)
 
 </div>
 
----
+## Core Principles
 
-## Overview
+- Centralized decision making
+- Dumb plugin routing (engine-side lightweight)
+- FeiYou closed-loop notification
+- Fail-open for business continuity
 
-**Ranger Phased Access Control** is a phased access control and unified security governance framework for big data engines such as Hive, Spark, and Doris.
+## Modules (Maven Multi-Module)
 
-It centralizes governance logic in a dedicated platform while keeping engine-side plugins lightweight and execution-focused. This allows teams to evolve from legacy bypass mode to whitelist-based admission control without risky all-at-once Ranger rollout.
+- `java/common`: shared protocol & action enums
+- `java/server`: governance decision service (Java)
+- `java/hive-plugin`: Hive plugin-side action router (Java)
+- `java/spark-plugin`: Spark plugin placeholder (Java)
+- `java/doris-plugin`: Doris plugin placeholder (Java)
 
----
+## Standard ActionType
 
-## Why This Project
+- `BLOCK`: throw exception and stop SQL execution
+- `BYPASS`: allow directly, skip Ranger
+- `WARN`: allow with warning (platform sends FeiYou)
+- `CHECK`: invoke Ranger authorization
 
-The real challenge in data platform authorization is usually not whether Ranger exists, but how to roll it out safely in production.
+## Request/Response Contract
 
-Common problems include:
+Request:
 
-- legacy workloads cannot be migrated all at once
-- anonymous or unowned jobs are hard to track and govern
-- Hive, Spark, and Doris often implement governance differently
-- authorization logic can easily become part of the critical path
+```json
+{
+  "jobName": "etl_finance_daily_01",
+  "user": "zhangsan",
+  "engine": "HIVE_TEZ",
+  "sql": "SELECT * FROM finance.orders LIMIT 10",
+  "clientIp": "10.1.100.5",
+  "queryId": "hive_xxxx"
+}
+```
 
-This project addresses those issues by moving complex policies to a centralized governance layer and reducing plugins to context collection, platform invocation, and action routing.
+Response:
 
----
+```json
+{
+  "code": 200,
+  "traceId": "req-8f7a9b2c",
+  "data": {
+    "actionType": "CHECK",
+    "msg": "",
+    "alertTriggered": false,
+    "queryId": "hive_xxxx"
+  }
+}
+```
 
-## Core Capabilities
+## Hive Plugin Routing Semantics
 
-### 1. Centralized Decision-Making
+`PhasedRangerAuthorizer` behavior:
 
-Plugins only collect runtime context and call the governance platform. Naming checks, migration routing, policy decisions, and notification workflows are all centralized.
+1. call governance platform (`GovernanceClient.decide`)
+2. if exception / non-200 response: fail-open (`BYPASS`)
+3. route by action:
+   - `BLOCK`: throw `AccessControlException` with `msg`
+   - `BYPASS/WARN`: return directly
+   - `CHECK`: call Ranger delegate; on denial callback `msgFail`
+4. `CHECK` failure supports two modes:
+   - strict mode (default): rethrow Ranger denial and block
+   - observe mode: swallow Ranger denial and only report via `msgFail`
 
-### 2. Four Standard Actions
+## Build & Test
 
-The governance platform returns one of four standard actions:
+```bash
+mvn test
+```
 
-- `BLOCK`
-- `BYPASS`
-- `WARN`
-- `CHECK`
+## Ranger Inheritance Integration (Hive / Spark / Doris)
 
-### 3. Phased Ranger Adoption
+To preserve native Ranger capabilities, Hive plugin now provides:
 
-Instead of forcing all workloads through Ranger immediately, the platform enables gradual rollout:
+- `PhasedRangerAuthorizer extends RangerHiveAuthorizer`
+- `PhasedRangerAuthorizerFactory extends RangerHiveAuthorizerFactory`
 
-- legacy jobs can remain in `BYPASS`
-- transitional jobs can run with `WARN`
-- approved or whitelisted jobs go through `CHECK`
-- invalid or unregistered jobs are `BLOCK`ed
+Routing behavior:
 
-### 4. IM Notification
+- `BLOCK`: throw `HiveAccessControlException`
+- `BYPASS/WARN`: return directly
+- `CHECK`: call `super.checkPrivileges(...)` to reuse Ranger native policy
 
-When anonymous jobs, policy violations, or missing-permission events are detected, the platform can asynchronously send IM notifications to job owners or related teams with remediation guidance, forming a closed-loop governance workflow.
+Factory returns phased authorizer instead of native factory output, so governance routing is inserted before Ranger check while keeping Ranger compatibility.
 
-### 5. Fail-Open Protection
 
-If the governance platform becomes unavailable, plugins automatically degrade to `BYPASS`, prioritizing business continuity.
-
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-    A[Client / SQL Request] --> B[Engine Plugin<br/>Hive / Spark / Doris]
-    B --> C[Governance Platform]
-    C --> D[Policy Decision]
-    C --> E[Async IM Notification]
-    D --> F{ActionType}
-    F -->|BLOCK| G[Reject]
-    F -->|BYPASS| H[Allow]
-    F -->|WARN| I[Allow + Notify]
-    F -->|CHECK| J[Ranger Authorization]
-    J -->|Pass| K[Execute]
-    J -->|Fail| L[msgFaill Callback]
-    L --> C
+Spark and Doris follow the same phased routing contract via `PhasedSparkAuthorizer` and `PhasedDorisAuthorizer` plus their factory classes.
