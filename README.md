@@ -67,8 +67,10 @@ Response:
    - `BYPASS/WARN`: return directly
    - `CHECK`: call Ranger delegate; on denial callback `msgFail`
 4. `CHECK` failure supports two modes:
-   - strict mode (default): rethrow Ranger denial and block
-   - observe mode: swallow Ranger denial and only report via `msgFail`
+   - observe mode (default): catch Ranger `Exception`, report via `msgFail`, then allow query to continue
+   - strict mode: report via `msgFail`, then rethrow Ranger denial and block
+   - switch by Hive conf `ranger.governance.observe.check.failure` (`true` default observe, `false` strict)
+   - rollout recommendation: keep observe mode during legacy SQL remediation to avoid changing current execution flow
 
 ## Build & Test
 

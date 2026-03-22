@@ -2,16 +2,21 @@ package com.ranger.governance.common.protocol;
 
 import com.ranger.governance.common.model.DecisionRequest;
 import com.ranger.governance.common.model.DecisionResponse;
-import sun.security.jca.GetInstance;
 
 public class GovernanceClientHttpImpl implements GovernanceClient {
+  private static final GovernanceClient INSTANCE = new GovernanceClientHttpImpl();
 
   private GovernanceClientHttpImpl() {
 
   }
 
+  public static GovernanceClient getInstance() {
+    return INSTANCE;
+  }
+
+  @Deprecated
   public static GovernanceClient GetInstance() {
-    return new GovernanceClientHttpImpl();
+    return getInstance();
   }
 
   @Override

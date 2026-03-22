@@ -19,13 +19,17 @@ import java.util.List;
 
 public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
   private static final Logger LOG = LoggerFactory.getLogger(PhasedRangerAuthorizer.class);
+  public static final String OBSERVE_CHECK_FAILURE_CONF_KEY = "ranger.governance.observe.check.failure";
 
   private final GovernanceClient governanceClient;
+  private final boolean strictCheckFailure;
 
   public PhasedRangerAuthorizer(HiveMetastoreClientFactory metastoreClientFactory, HiveConf conf,
       HiveAuthenticationProvider hiveAuthenticator, HiveAuthzSessionContext sessionContext) {
     super(metastoreClientFactory, conf, hiveAuthenticator, sessionContext);
-    this.governanceClient = GovernanceClientHttpImpl.GetInstance();
+    this.governanceClient = GovernanceClientHttpImpl.getInstance();
+    boolean observeCheckFailure = conf == null || conf.getBoolean(OBSERVE_CHECK_FAILURE_CONF_KEY, true);
+    this.strictCheckFailure = !observeCheckFailure;
   }
 
   @Override
@@ -62,16 +66,42 @@ public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
     if (actionType == ActionType.CHECK) {
       try {
         super.checkPrivileges(hiveOpType, inputHObjs, outputHObjs, context);
-      } catch (Exception rangerEx){
-        try {
-          governanceClient.msgFail(request, rangerEx.getMessage());
-        } catch (Exception callbackEx) {
-          LOG.error("msgFail callback failed", callbackEx);
+      } catch (Exception rangerEx) {
+        onRangerCheckFailure(request, rangerEx);
+        if (strictCheckFailure) {
+          rethrowRangerFailure(rangerEx);
         }
-        LOG.warn("Observe mode enabled, swallow Ranger denial. queryId={}, err={}", request.getQueryId(),
-            rangerEx.getMessage());
       }
     }
+  }
+
+  private void onRangerCheckFailure(DecisionRequest request, Throwable rangerEx) {
+    try {
+      governanceClient.msgFail(request, rangerEx.getMessage());
+    } catch (Exception callbackEx) {
+      LOG.error("msgFail callback failed", callbackEx);
+    }
+    if (strictCheckFailure) {
+      LOG.warn("Strict mode enabled, rethrow Ranger denial. queryId={}, err={}", request.getQueryId(),
+          rangerEx.getMessage());
+    } else {
+      LOG.warn("Observe mode enabled, swallow Ranger denial. queryId={}, err={}", request.getQueryId(),
+          rangerEx.getMessage());
+    }
+  }
+
+  private void rethrowRangerFailure(Exception rangerEx)
+      throws HiveAuthzPluginException, HiveAccessControlException {
+    if (rangerEx instanceof HiveAuthzPluginException) {
+      throw (HiveAuthzPluginException) rangerEx;
+    }
+    if (rangerEx instanceof HiveAccessControlException) {
+      throw (HiveAccessControlException) rangerEx;
+    }
+    if (rangerEx instanceof RuntimeException) {
+      throw (RuntimeException) rangerEx;
+    }
+    throw new RuntimeException(rangerEx);
   }
 
   private DecisionRequest buildDecisionRequest(HiveAuthzContext context) {

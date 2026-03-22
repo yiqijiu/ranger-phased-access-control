@@ -44,16 +44,23 @@ public class PhasedDorisAuthorizer {
         if (action == ActionType.CHECK) {
             try {
                 rangerChecker.check(request);
-            } catch (RuntimeException rangerEx) {
+            } catch (Exception rangerEx) {
                 try {
                     governanceClient.msgFail(request, rangerEx.getMessage());
                 } catch (Exception ignored) {
                     // ignore callback error
                 }
                 if (strictCheckFailure) {
-                    throw rangerEx;
+                    throw wrapAsRuntime(rangerEx);
                 }
             }
         }
+    }
+
+    private RuntimeException wrapAsRuntime(Exception ex) {
+        if (ex instanceof RuntimeException) {
+            return (RuntimeException) ex;
+        }
+        return new RuntimeException(ex);
     }
 }
