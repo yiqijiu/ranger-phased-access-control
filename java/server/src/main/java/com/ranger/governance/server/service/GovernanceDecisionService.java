@@ -4,59 +4,111 @@ import com.ranger.governance.common.model.ActionType;
 import com.ranger.governance.common.model.DecisionData;
 import com.ranger.governance.common.model.DecisionRequest;
 import com.ranger.governance.common.model.DecisionResponse;
-import com.ranger.governance.server.cache.GovernancePolicyCache;
+import com.ranger.governance.server.config.GovernancePolicyProperties;
+import com.ranger.governance.server.whitelist.TaskWhitelistLookup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
+@Service
 public class GovernanceDecisionService {
-    private final GovernancePolicyCache cache;
-    private final MsgNotifier notifier;
+    private static final String DEFAULT_JOB_NAME_REGEX = "^[a-z][a-z0-9_\\-]{2,63}$";
+    private static final Logger LOG = LoggerFactory.getLogger(GovernanceDecisionService.class);
 
-    public GovernanceDecisionService(GovernancePolicyCache cache, MsgNotifier notifier) {
-        this.cache = cache;
+    private final TaskWhitelistLookup whitelistLookup;
+    private final MsgNotifier notifier;
+    private final Pattern jobNamePattern;
+    private final Set<String> blockedUsers;
+
+    @Autowired
+    public GovernanceDecisionService(
+            GovernancePolicyProperties policyProperties,
+            TaskWhitelistLookup whitelistLookup,
+            MsgNotifier notifier
+    ) {
+        this(
+                whitelistLookup,
+                notifier,
+                Pattern.compile(policyProperties != null ? policyProperties.getJobNameRegex() : DEFAULT_JOB_NAME_REGEX),
+                policyProperties != null ? policyProperties.getBlockedUsers() : Collections.<String>emptySet()
+        );
+    }
+
+    public GovernanceDecisionService(
+            TaskWhitelistLookup whitelistLookup,
+            MsgNotifier notifier,
+            Pattern jobNamePattern,
+            Set<String> blockedUsers
+    ) {
+        this.whitelistLookup = whitelistLookup;
         this.notifier = notifier;
+        this.jobNamePattern = jobNamePattern;
+        this.blockedUsers = normalizeBlockedUsers(blockedUsers);
     }
 
     public DecisionResponse decide(DecisionRequest request) {
         String traceId = "req-" + UUID.randomUUID();
+        String user = normalizeText(request.getUser());
+        String jobName = normalizeText(request.getJobName());
 
-        if (request.getUser() == null || cache.getBlockedUsers().contains(request.getUser())) {
+        if (user.isEmpty() || blockedUsers.contains(user)) {
             return new DecisionResponse(200, traceId,
-                    new DecisionData(ActionType.BLOCK, "任务被拦截：无主/黑户任务，请补充任务归属信息。", true, request.getQueryId()));
+                    new DecisionData(ActionType.BLOCK, "Blocked: user is missing or in blocked list.", true, request.getQueryId()));
         }
 
-        if (request.getJobName() == null || request.getJobName().trim().isEmpty()) {
-            notifyAsync(request.getUser(), "任务缺少 JobName", "任务被拦截，原因：未设置 JobName，请参考 Wiki 整改。");
+        if (jobName.isEmpty()) {
+            notifyAsync(user, "Missing JobName", "Blocked because JobName is empty.");
             return new DecisionResponse(200, traceId,
-                    new DecisionData(ActionType.BLOCK, "任务被拦截，原因：未设置 JobName，请参考 Wiki 整改。", true, request.getQueryId()));
+                    new DecisionData(ActionType.BLOCK, "Blocked: JobName is required.", true, request.getQueryId()));
         }
 
-        if (!cache.getJobNamePattern().matcher(request.getJobName()).matches()) {
-            notifyAsync(request.getUser(), "任务命名不规范", "任务被拦截，原因：JobName 不符合命名规范。请按规范整改。");
+        if (!jobNamePattern.matcher(jobName).matches()) {
+            notifyAsync(user, "Invalid JobName", "Blocked because JobName format is invalid.");
             return new DecisionResponse(200, traceId,
-                    new DecisionData(ActionType.BLOCK, "任务被拦截，原因：JobName 不符合命名规范。", true, request.getQueryId()));
+                    new DecisionData(ActionType.BLOCK, "Blocked: JobName does not match policy format.", true, request.getQueryId()));
         }
 
-        if (cache.getMigratedJobNames().contains(request.getJobName())) {
+        if (whitelistLookup.isWhitelisted(jobName)) {
             return new DecisionResponse(200, traceId,
-                    new DecisionData(ActionType.CHECK, "已迁移任务，进入 Ranger 鉴权。", false, request.getQueryId()));
-        }
-
-        if (cache.getWarnOnlyJobNames().contains(request.getJobName())) {
-            notifyAsync(request.getUser(), "任务迁移提醒", "您的任务暂未接入权限管控，请在 Q4 前完成迁移。");
-            return new DecisionResponse(200, traceId,
-                    new DecisionData(ActionType.WARN, "任务处于过渡期，提醒放行。", true, request.getQueryId()));
+                    new DecisionData(ActionType.CHECK, "Whitelisted task, continue with Ranger check.", false, request.getQueryId()));
         }
 
         return new DecisionResponse(200, traceId,
-                new DecisionData(ActionType.BYPASS, "存量任务豁免放行。", false, request.getQueryId()));
+                new DecisionData(ActionType.BYPASS, "Legacy task not in whitelist, bypass Ranger check.", false, request.getQueryId()));
     }
 
     public void onRangerCheckFailed(DecisionRequest request, String rangerError) {
-        notifyAsync(request.getUser(), "权限缺失告警", "Ranger 鉴权失败: " + rangerError + "，请联系治理团队补齐权限。");
+        notifyAsync(request.getUser(), "Ranger Check Failed", "Ranger authorization failed: " + rangerError);
     }
 
     private void notifyAsync(String receiver, String title, String content) {
-        notifier.send(receiver, title, content);
+        try {
+            notifier.send(receiver, title, content);
+        } catch (Exception ex) {
+            LOG.error("notify failed but ignored, receiver={}, title={}", receiver, title, ex);
+        }
+    }
+
+    private Set<String> normalizeBlockedUsers(Set<String> users) {
+        Set<String> normalized = new HashSet<String>();
+        normalized.add("");
+        normalized.add("anonymous");
+        if (users != null) {
+            for (String user : users) {
+                normalized.add(normalizeText(user));
+            }
+        }
+        return Collections.unmodifiableSet(normalized);
+    }
+
+    private String normalizeText(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
     }
 }

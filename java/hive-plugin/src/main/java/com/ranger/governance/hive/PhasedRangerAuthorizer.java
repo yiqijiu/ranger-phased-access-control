@@ -15,11 +15,28 @@ import org.apache.ranger.authorization.hive.authorizer.RangerHiveAuthorizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
   private static final Logger LOG = LoggerFactory.getLogger(PhasedRangerAuthorizer.class);
   public static final String OBSERVE_CHECK_FAILURE_CONF_KEY = "ranger.governance.observe.check.failure";
+  private static final String HTTP_CONFIG_RESOURCE = "ranger-governance-http.properties";
+  private static final String[] HTTP_CONF_KEYS = new String[] {
+      "governance.client.base-url",
+      "governance.client.decide-path",
+      "governance.client.msg-fail-path",
+      "governance.client.connect-timeout-ms",
+      "governance.client.socket-timeout-ms",
+      "governance.client.connection-request-timeout-ms",
+      "governance.client.max-total",
+      "governance.client.max-per-route",
+      "governance.client.keep-alive-ms"
+  };
+  private static final AtomicBoolean HTTP_CONFIG_INITIALIZED = new AtomicBoolean(false);
 
   private final GovernanceClient governanceClient;
   private final boolean strictCheckFailure;
@@ -27,6 +44,7 @@ public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
   public PhasedRangerAuthorizer(HiveMetastoreClientFactory metastoreClientFactory, HiveConf conf,
       HiveAuthenticationProvider hiveAuthenticator, HiveAuthzSessionContext sessionContext) {
     super(metastoreClientFactory, conf, hiveAuthenticator, sessionContext);
+    initHttpClientConfig(conf);
     this.governanceClient = GovernanceClientHttpImpl.getInstance();
     boolean observeCheckFailure = conf == null || conf.getBoolean(OBSERVE_CHECK_FAILURE_CONF_KEY, true);
     this.strictCheckFailure = !observeCheckFailure;
@@ -117,5 +135,46 @@ public class PhasedRangerAuthorizer extends RangerHiveAuthorizer {
     String ip = context != null ? context.getIpAddress() : "";
 
     return new DecisionRequest(jobName, user, EngineType.HIVE_TEZ, sql, ip, queryId);
+  }
+
+  private void initHttpClientConfig(HiveConf conf) {
+    if (!HTTP_CONFIG_INITIALIZED.compareAndSet(false, true)) {
+      return;
+    }
+
+    Properties defaults = loadHttpDefaults();
+    for (String key : HTTP_CONF_KEYS) {
+      if (hasText(System.getProperty(key))) {
+        continue;
+      }
+      String fromHiveConf = conf != null ? conf.get(key) : null;
+      if (hasText(fromHiveConf)) {
+        System.setProperty(key, fromHiveConf.trim());
+        continue;
+      }
+      String fromDefaultFile = defaults.getProperty(key);
+      if (hasText(fromDefaultFile)) {
+        System.setProperty(key, fromDefaultFile.trim());
+      }
+    }
+  }
+
+  private Properties loadHttpDefaults() {
+    Properties properties = new Properties();
+    try (InputStream inputStream = getClass().getClassLoader().getResourceAsStream(HTTP_CONFIG_RESOURCE)) {
+      if (inputStream == null) {
+        LOG.warn("HTTP config resource not found: {}", HTTP_CONFIG_RESOURCE);
+        return properties;
+      }
+      properties.load(inputStream);
+      return properties;
+    } catch (IOException ex) {
+      LOG.error("Failed to load HTTP config resource: {}", HTTP_CONFIG_RESOURCE, ex);
+      return properties;
+    }
+  }
+
+  private boolean hasText(String value) {
+    return value != null && !value.trim().isEmpty();
   }
 }

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>任务白名单配置</title>
+    <style>
+        body { font-family: "Microsoft YaHei", sans-serif; margin: 24px; background: #f7f9fc; color: #222; }
+        h1 { margin-bottom: 12px; }
+        .card { background: #fff; border: 1px solid #d8e0ea; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+        input[type=text] { padding: 8px; border: 1px solid #c7d2e0; border-radius: 6px; min-width: 220px; }
+        button { border: 1px solid #2f6feb; background: #2f6feb; color: #fff; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+        button.secondary { background: #fff; color: #2f6feb; }
+        button.danger { border-color: #d73a49; background: #d73a49; }
+        table { width: 100%; border-collapse: collapse; background: #fff; }
+        th, td { border: 1px solid #d8e0ea; padding: 10px; text-align: left; }
+        th { background: #eef3fa; }
+        .error { color: #d73a49; margin: 8px 0 0 0; }
+        .ops { display: flex; gap: 8px; }
+    </style>
+</head>
+<body>
+<h1>任务名称白名单配置</h1>
+
+<div class="card">
+    <form method="post" th:action="@{/admin/task-whitelist}">
+        <div class="row">
+            <label>
+                任务名:
+                <input type="text" name="taskName" required placeholder="etl_finance_daily_01"/>
+            </label>
+            <label>
+                说明:
+                <input type="text" name="description" placeholder="用途描述"/>
+            </label>
+            <button type="submit">新增/启用</button>
+        </div>
+    </form>
+    <p class="error" th:if="${error}" th:text="${error}"></p>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>任务名</th>
+            <th>说明</th>
+            <th>状态</th>
+            <th>更新时间</th>
+            <th>操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="entry : ${entries}">
+            <td th:text="${entry.id}"></td>
+            <td th:text="${entry.taskName}"></td>
+            <td th:text="${entry.description}"></td>
+            <td th:text="${entry.enabled} ? '启用' : '停用'"></td>
+            <td th:text="${entry.updatedAt}"></td>
+            <td>
+                <div class="ops">
+                    <form method="post" th:action="@{'/admin/task-whitelist/' + ${entry.id} + '/toggle'}">
+                        <button class="secondary" type="submit" th:text="${entry.enabled} ? '停用' : '启用'"></button>
+                    </form>
+                    <form method="post" th:action="@{'/admin/task-whitelist/' + ${entry.id} + '/delete'}">
+                        <button class="danger" type="submit">删除</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+        <tr th:if="${#lists.isEmpty(entries)}">
+            <td colspan="6">暂无白名单任务</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

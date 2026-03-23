@@ -1,0 +1,38 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  datasource:
+    url: ${PG_URL:jdbc:postgresql://localhost:5432/governance}
+    username: ${PG_USER:governance}
+    password: ${PG_PASSWORD:governance}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  thymeleaf:
+    cache: false
+
+governance:
+  policy:
+    job-name-regex: "^[a-z][a-z0-9_\\-]{2,63}$"
+    blocked-users:
+      - ""
+      - anonymous
+  notify:
+    channel: ${GOVERNANCE_NOTIFY_CHANNEL:noop}
+    connect-timeout-ms: 200
+    read-timeout-ms: 1000
+    feishu:
+      webhook-url: ${FEISHU_WEBHOOK_URL:}
+    slack:
+      webhook-url: ${SLACK_WEBHOOK_URL:}
+    dingtalk:
+      webhook-url: ${DINGTALK_WEBHOOK_URL:}
+    wecom:
+      webhook-url: ${WECOM_WEBHOOK_URL:}
+    teams:
+      webhook-url: ${TEAMS_WEBHOOK_URL:}

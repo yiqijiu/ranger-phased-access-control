@@ -78,6 +78,78 @@ Response:
 mvn test
 ```
 
+## Common HTTP Client (High Concurrency)
+
+`java/common` now provides a pooled HTTP client implementation in `GovernanceClientHttpImpl`:
+
+- Reuses Apache HttpClient (Hive runtime commonly includes this stack)
+- Uses connection pooling for concurrent plugin requests
+- Uses short, configurable timeouts to avoid impacting Hive SQL execution flow
+
+System properties:
+
+- `governance.client.base-url` (default `http://127.0.0.1:8080`)
+- `governance.client.decide-path` (default `/api/v1/governance/decision`)
+- `governance.client.msg-fail-path` (default `/api/v1/governance/msg-fail`)
+- `governance.client.connect-timeout-ms` (default `200`)
+- `governance.client.socket-timeout-ms` (default `500`)
+- `governance.client.connection-request-timeout-ms` (default `100`)
+- `governance.client.max-total` (default `512`)
+- `governance.client.max-per-route` (default `256`)
+- `governance.client.keep-alive-ms` (default `30000`)
+
+## Server Module (PostgreSQL + Whitelist Admin Page)
+
+`java/server` is now a Spring Boot service with PostgreSQL persistence.
+
+- DB migration: `java/server/src/main/resources/db/migration/V1__create_task_whitelist.sql`
+- Whitelist admin page: `GET /admin/task-whitelist`
+- Whitelist API:
+  - `GET /api/v1/task-whitelist`
+  - `POST /api/v1/task-whitelist`
+  - `PUT /api/v1/task-whitelist/{id}`
+  - `DELETE /api/v1/task-whitelist/{id}`
+- Governance API:
+  - `POST /api/v1/governance/decision`
+  - `POST /api/v1/governance/msg-fail`
+
+Default decision policy in server:
+
+- blocked user or invalid jobName: `BLOCK`
+- whitelisted taskName: `CHECK`
+- legacy taskName not in whitelist: `BYPASS`
+
+Run server module with local PG:
+
+```bash
+mvn -pl java/server spring-boot:run
+```
+
+Environment variables:
+
+- `PG_URL` (default `jdbc:postgresql://localhost:5432/governance`)
+- `PG_USER` (default `governance`)
+- `PG_PASSWORD` (default `governance`)
+- `SERVER_PORT` (default `8080`)
+
+Notification channels (Feishu / Slack / DingTalk / WeCom / Teams webhook):
+
+- `governance.notify.channel` (default `noop`, supported `noop|feishu|slack|dingtalk|wecom|teams`)
+- `governance.notify.connect-timeout-ms` (default `200`)
+- `governance.notify.read-timeout-ms` (default `1000`)
+- `governance.notify.feishu.webhook-url` (or env `FEISHU_WEBHOOK_URL`)
+- `governance.notify.slack.webhook-url` (or env `SLACK_WEBHOOK_URL`)
+- `governance.notify.dingtalk.webhook-url` (or env `DINGTALK_WEBHOOK_URL`)
+- `governance.notify.wecom.webhook-url` (or env `WECOM_WEBHOOK_URL`)
+- `governance.notify.teams.webhook-url` (or env `TEAMS_WEBHOOK_URL`)
+
+Behavior:
+
+- only one notifier channel is instantiated at runtime
+- `channel=noop` falls back to local noop logging
+- if a concrete channel is selected but webhook is missing, startup fails fast
+- notification send failure is logged and decision flow continues
+
 ## Ranger Inheritance Integration (Hive / Spark / Doris)
 
 To preserve native Ranger capabilities, Hive plugin now provides:
@@ -95,3 +167,27 @@ Factory returns phased authorizer instead of native factory output, so governanc
 
 
 Spark and Doris follow the same phased routing contract via `PhasedSparkAuthorizer` and `PhasedDorisAuthorizer` plus their factory classes.
+
+## Hive Plugin HTTP Config
+
+Hive plugin now includes default HTTP config file:
+
+- `java/hive-plugin/src/main/resources/ranger-governance-http.properties`
+
+Supported parameters:
+
+- `governance.client.base-url`
+- `governance.client.decide-path`
+- `governance.client.msg-fail-path`
+- `governance.client.connect-timeout-ms`
+- `governance.client.socket-timeout-ms`
+- `governance.client.connection-request-timeout-ms`
+- `governance.client.max-total`
+- `governance.client.max-per-route`
+- `governance.client.keep-alive-ms`
+
+Load priority in Hive runtime:
+
+1. JVM `-Dgovernance.client.*` system properties
+2. `hive-site.xml` (`HiveConf`) with same keys
+3. plugin bundled `ranger-governance-http.properties`
